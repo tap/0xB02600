@@ -16,11 +16,13 @@ from kaggle_environments.envs.halite.helpers import *
 import random, math
 
 # --- Tunable strategy parameters --------------------------------------------
-CARGO_RETURN_THRESHOLD = 200  # cargo at which a ship heads home to deposit
-MINE_MIN_HALITE = 50           # only bother mining a cell with at least this much
+CARGO_RETURN_THRESHOLD = 300  # cargo at which a ship heads home to deposit
+MINE_MIN_HALITE = 100           # only bother mining a cell with at least this much
 MAX_SHIPS = 20               # stop spawning once we have this many ships
-SPAWN_UNTIL_STEP = 400        # don't spawn new ships after this step
+SPAWN_UNTIL_STEP = 370        # don't spawn new ships after this step
 SHIPYARD_THRESHOLD = 2000
+INITIAL_SEARCH_STEPS = 1
+HALITE_WEIGHT_RATIO = 100.0
 
 next_positions = []
 going_home = []
@@ -65,15 +67,15 @@ def rate_cell(ship, cell, radius=7):
     for y in range(-radius, radius + 1):
         for x in range(-radius, radius + 1):
             tmp = cell.neighbor(Point(x, y))
-            value = tmp.halite / 100.0 # add amount limited to 100 for moves from player?
+            value = tmp.halite / HALITE_WEIGHT_RATIO # add amount limited to 100 for moves from player?
             if tmp.ship and tmp.position != ship.position:
                 # hunt ships with halite in them
                 if tmp.ship.halite > ship.halite and tmp.ship.player != ship.player:
-                    value += 2.0
+                    value += 5.0
                 else:
-                    value -= 2.0
+                    value -= 5.0
             # distance falloff
-            score += value / (1 + math.sqrt(x*x + y*y))
+            score += value / (1 + abs(x) + abs(y))
             # add clumping with allies
             # add star base distance
             # add algorithm for finding new starbase locations
@@ -89,7 +91,7 @@ def rate_shipyard(ship, cell, radius=3):
     for y in range(-radius, radius + 1):
         for x in range(-radius, radius + 1):
             tmp = cell.neighbor(Point(x, y))
-            value = tmp.halite / 100.0
+            value = tmp.halite / HALITE_WEIGHT_RATIO
             if tmp.ship and tmp.position != ship.position:
                 if tmp.ship.player != ship.player:
                     enemies += 1
@@ -98,7 +100,7 @@ def rate_shipyard(ship, cell, radius=3):
             if tmp.shipyard:
                 return 0
             # consider distance to other shipyards for overcrowding
-            score += value / (1 + math.sqrt(x*x + y*y))
+            score += value / (1 + abs(x) + abs(y))
     #score += 3 - enemies
     return score
 
@@ -177,13 +179,27 @@ def agent(obs, config):
     next_positions = []
 
 
+    if board.step < INITIAL_SEARCH_STEPS and not me.shipyards:
+        ship = me.ships[0]
+        options = {
+            ShipAction.CONVERT: rate_shipyard(ship, ship.cell, radius=5),
+            ShipAction.NORTH: rate_shipyard(ship, ship.cell.north, radius=5),
+            ShipAction.SOUTH: rate_shipyard(ship, ship.cell.south, radius=5),
+            ShipAction.EAST: rate_shipyard(ship, ship.cell.east, radius=5),
+            ShipAction.WEST: rate_shipyard(ship, ship.cell.west, radius=5)
+        }
+        result = max(options, key=options.get)
+        ship.next_action = result
+        return me.next_actions
+
+
     # If we have ships but no shipyard, convert one to get started.
     if not me.shipyards and me.ships and available_halite >= convert_cost:
         me.ships[0].next_action = ShipAction.CONVERT
         available_halite -= convert_cost
 
     # decide if we should build a new shipyard
-    if available_halite > SHIPYARD_THRESHOLD:
+    if available_halite > (SHIPYARD_THRESHOLD + board.step * 10.0):
         best_ship = None
         best_score = 0.0
         for ship in me.ships:
@@ -207,7 +223,10 @@ def agent(obs, config):
             shipyard_positions,
             key=lambda p: toroidal_distance(ship.position, p, size),
         )
-        nearest_distance = toroidal_distance(ship.position, nearest, size)
+        nearest_distance = 0
+        if nearest:
+            nearest_distance = toroidal_distance(ship.position, nearest, size)
+
         if nearest_distance < 1 and ship.id in going_home:
             going_home.remove(ship.id)
         if ship.id in going_home:
@@ -217,13 +236,17 @@ def agent(obs, config):
             if test.ship and test.ship.halite < ship.halite:
                 ship.next_action = None
         else:
-            if shipyard_positions and nearest_distance > 0 and ship.halite >= (CARGO_RETURN_THRESHOLD - ((10 + 0.1 * board.step) * nearest_distance)):
+            if shipyard_positions and nearest_distance > 0 and ship.halite >= max(20, CARGO_RETURN_THRESHOLD - ((20 + 0.1 * board.step) * nearest_distance)):
                 ship.next_action = move_towards(ship.position, nearest, size)
                 going_home.append(ship.id)
             else:
                 # Otherwise mine or seek out halite.
                 ship.next_action = best_neighbor_action(ship, board, available_halite)
         next_positions.append(get_position(ship.cell, ship.next_action))
+
+    game_total_ships = 0
+    for p in board.players:
+        game_total_ships += len(board.players[p].ships)
 
     # Spawn ships early to grow the fleet.
     if board.step < SPAWN_UNTIL_STEP:
@@ -243,7 +266,7 @@ def agent(obs, config):
             if shipyard.position in next_positions:
                 print("skipping spawn to avoid collision")
                 spawn = False
-            if spawn and len(me.ships) > board.step / 20.0:
+            if spawn and len(me.ships) > game_total_ships/4:#board.step / 20.0:
                 spawn = random.randrange(0, 100) < 25
             if spawn and available_halite >= spawn_cost:
                 shipyard.next_action = ShipyardAction.SPAWN
