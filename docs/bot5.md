@@ -1,7 +1,10 @@
 # bot5.py — generation 5: graded repulsion
 
-**Status: under evaluation** (head-to-head vs bot2 and a league run in
-progress; results will be recorded here).
+**Status: v1 measured — no improvement over bot2** (1/8 head-to-head at
+−1,862 mean, below even the identical-copies control; league rank 1.92
+vs bot2's 1.75 with one elimination in the strong field). A refined
+variant (repulsion only for laden ships, half weight) is under test;
+final verdict below.
 
 ## Design goal
 
@@ -45,4 +48,20 @@ empty hunter — which is what actually determines collision outcomes.
 
 ## Results
 
-*(pending — series and league running)*
+### v1 (as committed: all ships, weights 0.5/0.25)
+
+| Series | Result |
+|---|---|
+| Head-to-head vs bot2 (8 games) | **1/8**, mean 1,007 vs 2,868 (−1,862) — worse than the identical-copies control (1/8, −744), so likely a real small penalty |
+| League: weak field | rank 1.00, 4/4 firsts (everyone sweeps this) |
+| League: persona field | 2.50 — identical to bot2 |
+| League: strong field | 2.25 vs bot2's 1.75, **1 elimination** (bot2 had 0) |
+
+Suspected drag: the gradient applies to *empty* ships too — for a
+0-cargo ship every enemy empty ship is a "threat," so hunters are
+pushed away from the crowds they should be working, and early miners
+detour around harmless traffic.
+
+### v2 refinement (laden-only ≥100 cargo, half weights)
+
+*(pending — series running; verdict recorded on completion)*
