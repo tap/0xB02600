@@ -1,7 +1,9 @@
 # bot6.py — Gavin's gradient bot, repaired
 
-**Status: under evaluation** (fixes verified vs randoms; series vs bot2
-and gavin-v2 running).
+**Status: evaluated. A large improvement over Gavin's bot, but not a
+challenger to bot2.** Beats gavin-v2 5/6, yet is eliminated by bot2 in
+all 6 games — the gradient fleet is fragile under sustained hunting.
+**bot2 remains the recommended submission.**
 
 ## Lineage
 
@@ -60,6 +62,38 @@ while fixing:
   survives with a stable ~22-ship / 3-yard economy, no errors.
 - **vs gavin-v2 (6 games): 5/6, mean 3,510 vs 374** — a ~9× gain over
   the version it was forked from; the fixes clearly land. One game bot6
-  was eliminated (−112), so a collision/elimination edge case remains
-  under aggressive play.
-- vs bot2 (6 games): *pending*
+  was eliminated (−112), foreshadowing the fragility below.
+- **vs bot2 (6 games): 0/6, eliminated in ALL six** (rewards −67 to
+  −232 vs bot2's 6,652–42,731). The gradient fleet does not survive
+  sustained hunting.
+
+## Why it beats Gavin but loses to bot2
+
+The fixes solved Gavin's *self-inflicted* problems (frozen deposits,
+economy-stalling return logic, cargo lost at the finish), which is why
+it now crushes gavin-v2 and randoms. But bot6 keeps Gavin's structural
+weaknesses that only a strong opponent punishes:
+
+1. **Reactive, radius-limited defense.** `rate_cell` only repels
+   threats it can see in its window and only when choosing a move; it
+   has no global reservation system, so bot2's coordinated hunters trap
+   ships that individually "felt safe."
+2. **Big fragile fleet.** Uncapped-style spawning (even capped at 22)
+   plus 3 yards spreads a large, thinly-defended fleet that feeds
+   cargo — and half-cargo on every kill — straight to bot2's pirates.
+3. **No danger *wall*, only a gradient.** Unlike bot2, a bot6 ship will
+   still step somewhere merely "low-scoring" rather than treating a
+   losing collision as forbidden, so it loses ships it didn't have to.
+
+The elimination cascade: lost ships drop cargo bot2 collects, bot2
+snowballs, and bot6's remaining fleet can't out-mine the bleeding.
+
+## Verdict
+
+bot6 is a successful *code review deliverable* — it proves the fixes to
+Gavin's bot work, turning a 200-halite hoarder into a multi-thousand
+economy that beats its parent 5/6. It is not a submission candidate:
+against a coordinated hunter it has the same fate as every other bot
+that lacks bot2's reservation core and danger wall. The lesson mirrors
+bot4/bot5 — a distinctive strategy still needs the safety core to
+survive the top of the table.
