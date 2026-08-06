@@ -74,6 +74,53 @@ Its always-bank-at-100 style also makes its ships poor prey for our
 ≥100-cargo hunters — a deliberate archetype stress for hunting-reliant
 strategies. A direct bot2-vs-Gavin-field series is recorded below.
 
+## Shipyard-raider stress test
+
+Question: how does bot2 fare against a bot *designed to attack
+shipyards*? `corpus/raider.py` keeps a mining core for income and
+streams empty ships at the enemy's yards, piling `RAIDERS_PER_YARD = 3`
+onto one yard to overwhelm a single defensive spawn. Trace tooling:
+`eval/raid_trace.py` (instrumented 2-player game logging bot2's yard
+count, shields, and bank each turn).
+
+**Result: raider 0/8 vs bot2 (with random fillers), eliminated in 6 of
+8 games; bot2 averaged 56,154 — higher than against most opponents.**
+
+The mechanism, from the 2-player trace:
+
+1. **The attack lands.** Three empty raiders beat bot2's single
+   defensive-spawn blocker and ground its first yard's shields
+   3 → 2 → 1 → 0, **destroying it at step 28** (bot2 at 319 halite,
+   below the 500 spawn cost, so it could not out-spawn the pressure).
+2. **bot2 rebuilds in one turn.** Its "have ships but no yard → convert
+   the richest-cargo ship" logic stood up a fresh 3-shield yard at step
+   29 and kept expanding. The raider knocked that down too; bot2 just
+   rebuilt again.
+3. **The raider starves.** A yard kill costs 3 ships (1,500 halite) to
+   remove a 500 halite yard that rebuilds from cargo already aboard a
+   ship. The mining core can't refund that, so the raider withered from
+   5 ships to 1 while bot2 snowballed to 21 ships / 3 yards / 7 shields.
+4. **Failed attacks feed bot2.** Ships lost on collisions drop halite
+   onto the board and hand cargo to the winner, so attacking bot2
+   *raises* its score — the raider is an economic donor.
+
+### Why bot2 is robust here (and the one real gap)
+
+Robustness comes from **instant rebuild** (a lost yard is a one-turn
+setback while ≥1 ship survives to convert) plus the **ruinous 3-shield
+trade** (this fork makes yard-killing 3× costlier than vanilla Halite,
+and the defensive spawn forces even more attacker ships per yard).
+
+The one genuine vulnerability the trace exposed: at step 28 bot2 lost
+its **only** yard with the bank under 500. It survived solely because
+it still had ships to convert. An attacker that destroys bot2's last
+yard *in the same window where bot2 has no surviving ship and < 500
+halite* would trigger the elimination rule. That window is narrow
+(mostly the first ~8 turns before bot2 has a fleet), and closing it
+requires hunting bot2's ships and its yards at once — i.e. a strong
+all-around aggressor, which bot2's reservation-and-danger core has
+beaten in every series run this session.
+
 ## bot2 vs the Gavin field
 
 Series: bot2 + gavin + gavin_fixed + starter_fixed, 8 games, rotated
