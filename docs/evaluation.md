@@ -74,6 +74,64 @@ Its always-bank-at-100 style also makes its ships poor prey for our
 ≥100-cargo hunters — a deliberate archetype stress for hunting-reliant
 strategies. A direct bot2-vs-Gavin-field series is recorded below.
 
+## Four-way tournament-realistic fields
+
+The real tournament is a 4-player free-for-all, and 4-player dynamics
+are nonlinear (aggression that wins one field loses another), so these
+fields matter more than any 1v1. Runner: `eval/fourway.py` (12 games,
+all seat rotations, reports wins / mean rank / mean halite). Note the
+scores here are far below bot2's vs-random tens of thousands — a field
+of capable bots suppresses everyone's economy, so games are
+lower-scoring and higher-variance. Read *rank*, and prefer sweeps over
+split results.
+
+### colton / gavin / pacifist / bot2
+
+Colton's bot (from main) is a **fork of bot2** — its source docstring is
+bot2's verbatim, from the "Improvements based upon bot2" commit. It is
+the strongest real entrant tested: 35,060 vs three randoms, in bot2's
+own class. In the four-way, though, bot2's tuning still edges it:
+
+| Bot | Wins | Mean rank | Mean halite |
+|---|---|---|---|
+| **bot2** | **12/12** | **1.00** | 4,714 |
+| colton | 0/12 | 2.50 | 320 |
+| pacifist | 0/12 | 2.67 | 387 |
+| gavin | 0/12 | 3.83 | −60 |
+
+bot2 won **every** game across all seat rotations — a far stronger
+signal than a split result. colton clearly beats gavin and pacifist but
+cannot take a game off bot2. This is the most reassuring result for the
+tournament: bot2 cleanly handles the strongest actual competitor, not
+just broken bots and personas.
+
+### pacifist / gavin / bot2 / pirate (the "all-fighters" field)
+
+Prompted by a single observed game where the pacifist won. Over 12
+rotated games it does **not** hold up:
+
+| Bot | Wins | Mean rank | Mean halite |
+|---|---|---|---|
+| pirate | 8/12 | 1.50 | 1,651 |
+| bot2 | 4/12 | 1.75 | 1,055 |
+| pacifist | 0/12 | 3.00 | 221 |
+| gavin | 0/12 | 3.75 | −111 |
+
+Lessons:
+
+- **The pacifist "win" was noise.** Real single game, unrepresentative
+  sample — over 12 games it averages 3rd and never wins. This field is
+  a very low-score brawl (winner ~1,651), so single-game upsets are
+  common; the trend is what counts.
+- **Field-dependence is real.** The most aggressive bot (pirate) won
+  *this* field, the opposite of the third-party hypothesis, while bot2
+  won the colton field. Same bots, different mix, different winner —
+  which is exactly why an opponent-adaptive detector tuned to one
+  anecdote would backfire (it would have suppressed the aggression that
+  wins here).
+- **bot2 is top-two in both fields**, which is the property that
+  matters going into an unknown 4-player table.
+
 ## Shipyard-raider stress test
 
 Question: how does bot2 fare against a bot *designed to attack
