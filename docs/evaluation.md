@@ -132,6 +132,39 @@ Lessons:
 - **bot2 is top-two in both fields**, which is the property that
   matters going into an unknown 4-player table.
 
+## Adaptation experiment: hunt the runaway leader
+
+Idea: detect a runaway winner (the pacifist's one-game upset) and send
+attacks to bring it down. `corpus/leaderhunt.py` is bot2 plus a
+detector — past step 60, if any opponent's total wealth (bank + cargo)
+exceeds ours by 15%, it focuses hunting on that leader's ships (cargo
+threshold dropped 100 → 40, hunt weight ×3, packs of 3). Runner:
+`eval/passivefield.py` (X + pacifist + pacifist + turtle, the field
+most likely to produce a runaway).
+
+**Result: not worth adopting.**
+
+| Test | Finding |
+|---|---|
+| Regression vs bot2 (competitive field, 8 games) | 2/8, mean 871 vs 1,510 (−640) — inside the ±744 noise floor; no gain, slight lean negative |
+| Passive field, leaderhunt vs plain bot2 (same field) | **identical mean rank 1.38**, but leaderhunt banked **1,321 vs bot2's 1,888** — same placement, less halite |
+
+Two reasons it fails:
+
+1. **Kingmaker cost.** In a 4-player game the attacker pays the full
+   price of hunting the leader while the other two share the benefit.
+   leaderhunt knocks first place down but ends up poorer at the same
+   rank — visible as the lower mean halite for identical placement.
+2. **The premise rarely fires against bot2.** A passive economy almost
+   never *becomes* the runaway when bot2 is present — bot2's normal
+   mining + general hunting already beats it (rank 1.38, 6/8 wins with
+   no special logic). The pacifist "runaway" was a rare noise game, not
+   an exploitable recurring state.
+
+Same lesson as bot4/bot5/bot6: a plausible, well-targeted adaptation
+that measurement rejects. bot2's existing hunting handles economic
+opponents; special-casing the leader burns halite for no placement gain.
+
 ## Shipyard-raider stress test
 
 Question: how does bot2 fare against a bot *designed to attack
