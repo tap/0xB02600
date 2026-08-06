@@ -1,0 +1,13 @@
+The player with the most halite at the end of the game wins.
+You start the game with 1 ship and 5000 halite.
+Converting a ship to a shipyard costs 500 halite.
+Spawning a ship from a shipyard costs 500 halite.
+Each turn you can issue one command to each ship you control to go North, South, East, West, or to convert into a shipyard.
+Shipyards are created with 3 shields.
+If a ship is not issued a command it will not move and will instead mine 25% of the halite underneath its current position. Mined halite is stored on the ship, and there is no maximum to how much halite a ship can hold.
+Halite on ships cannot be spent to buy ships or shipyards until deposited at a shipyard (with a specific exception detailed under the convert section below). At the end of the game - players need to move their ships over shipyards to deposit the halite and teleport it back to their homeworlds to count for the final Halite total.
+Ships that move onto the same square collide. The smallest ship (that is, the one with the least halite in its storage) survives and all other ships will be destroyed. The smallest ship steals half of the halite from other ships it collides with, and the remaining halite is dropped on the board. If two or more ships have tie for the smallest amount of halite they are both destroyed. After ship collision a check is performed for a shipyard collision, if an enemy ship collides with a shipyard, the ship is destroyed, and the shipyard's shield is reduced by one. If the shipyard's shield drops to zero, the shipyard is destroyed.
+If a player loses all of their ships and shipyards they are eliminated from the game.
+Halite is distributed randomly (but symmetrically) at the start of the game.
+Halite in each cell regenerates by 2% per turn, up to a maximum of 500 halite.
+The game lasts a maximum of 400 turns.
