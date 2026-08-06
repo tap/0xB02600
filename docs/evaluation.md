@@ -76,6 +76,24 @@ strategies. A direct bot2-vs-Gavin-field series is recorded below.
 
 ## bot2 vs the Gavin field
 
-*(series: bot2 + gavin + gavin_fixed + starter_fixed, 8 games, rotated
-seats — results pending at time of writing; see final section of this
-doc in a later commit.)*
+Series: bot2 + gavin + gavin_fixed + starter_fixed, 8 games, rotated
+seats.
+
+**bot2 won 8/8**, banking 16,199–76,079 per game. Both Gavin versions
+finished between −277 and +311 (negative = eliminated), and
+starter_fixed was eliminated every game (its remaining failure mode:
+fleet convergence — the spawn fix alone doesn't stop ships
+tie-colliding on shared targets).
+
+Takeaways:
+
+- Against the one confirmed real opponent, bot2's margin is total; the
+  heat-map fix doesn't rescue Gavin's bot because its uncapped
+  spawning drains the bank faster than its miners refill it.
+- The "poor prey" concern (Gavin's ships bank at 100, starving our
+  ≥100-cargo hunters) did not matter — the economic engine alone
+  decides these games.
+- starter_fixed being eliminated every game suggests the median
+  competitor tomorrow needs BOTH classic fixes (spawn discipline and
+  friendly-collision avoidance) to even survive; bots with only one
+  fix still feed the field.
