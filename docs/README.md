@@ -14,6 +14,8 @@ shipyards 3 shields).
 | [`bot5.py`](bot5.md) | Graded repulsion (grown from Gavin's gradient) | Retired — parity with bot2, no gain |
 | [`gavin.py`](evaluation.md) | Gavin's heat-seeking gradient bot (from main) | Field sample; idea source for bot5 |
 
+See also [engine-notes.md](engine-notes.md) — exploit audit and defensive hardening.
+
 ## How bots are evaluated
 
 All results come from full 400-turn games using the vendored
