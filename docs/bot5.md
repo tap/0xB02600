@@ -1,10 +1,12 @@
 # bot5.py — generation 5: graded repulsion
 
-**Status: v1 measured — no improvement over bot2** (1/8 head-to-head at
-−1,862 mean, below even the identical-copies control; league rank 1.92
-vs bot2's 1.75 with one elimination in the strong field). A refined
-variant (repulsion only for laden ships, half weight) is under test;
-final verdict below.
+**Status: experiment concluded — parity with bot2, no demonstrated
+gain.** v1 (gradient on all ships) measured an outright penalty; the
+v2 refinement (laden ships only, half weight) recovered to parity
+(3/8, −322, inside the ±744 noise floor) and is the configuration now
+in bot5.py. **bot2 remains the recommended submission** — bot5 is the
+better starting point only if a future evening brings the 30+ game
+budget needed to tune the gradient properly.
 
 ## Design goal
 
@@ -62,6 +64,23 @@ Suspected drag: the gradient applies to *empty* ships too — for a
 pushed away from the crowds they should be working, and early miners
 detour around harmless traffic.
 
-### v2 refinement (laden-only ≥100 cargo, half weights)
+### v2 refinement (laden-only ≥100 cargo, half weights — now in bot5.py)
 
-*(pending — series running; verdict recorded on completion)*
+| Series | Result |
+|---|---|
+| Head-to-head vs bot2 (8 games) | **3/8**, mean 1,067 vs 1,389 (−322) — inside the noise floor: parity |
+
+Restricting the gradient to laden ships recovered v1's penalty,
+confirming the hunter-drag diagnosis, but no advantage emerged.
+
+## Verdict
+
+Graded repulsion joins the control field and interception hunting in
+the "plausible, unproven at hackathon match budgets" bin. The idea
+remains attractive — it is the only mechanism tested that can express
+*phase-dependent* caution without hard rules (earlydef showed hard
+rules backfire under pressure) — but distinguishing it from bot2 needs
+a much larger paired-series budget and probably joint tuning of
+radius/weights. The measured lesson stands: every feature must beat
+the incumbent in its own series before shipping, and at n=8 only large
+effects are detectable.

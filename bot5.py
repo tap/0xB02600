@@ -66,8 +66,8 @@ MAX_YARDS = 3
 ENDGAME_MARGIN = 4             # slack turns when recalling cargo
 DANGER_PENALTY = 1000          # movement penalty for entering a kill zone
 REPULSION_RADIUS = 3           # threat gradient reach (hard wall is radius 1)
-REPULSION_EARLY = 0.5          # gradient weight while a robbery would snowball
-REPULSION_LATE = 0.25          # relaxed weight once the economy is established
+REPULSION_EARLY = 0.25          # gradient weight while a robbery would snowball
+REPULSION_LATE = 0.12          # relaxed weight once the economy is established
 EARLY_PHASE_STEP = 100         # 'early' ends here
 
 _dock_target = None  # persists across turns within one episode
@@ -272,13 +272,14 @@ def agent(obs, config):
             if nxt in enemy_yards or nxt in reserved:
                 continue
             score = -toroidal_distance(nxt, target, size)
-            score -= repulsion_weight * sum(
-                REPULSION_RADIUS + 1 - d
-                for ep, ec in enemy_ships
-                if ec <= cargo
-                for d in (toroidal_distance(ep, nxt, size),)
-                if d <= REPULSION_RADIUS
-            )
+            if cargo >= 100:
+                score -= repulsion_weight * sum(
+                    REPULSION_RADIUS + 1 - d
+                    for ep, ec in enemy_ships
+                    if ec <= cargo
+                    for d in (toroidal_distance(ep, nxt, size),)
+                    if d <= REPULSION_RADIUS
+                )
             if dangerous(nxt, cargo):
                 score -= DANGER_PENALTY
             if best_score is None or score > best_score:

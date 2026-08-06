@@ -10,7 +10,9 @@ shipyards 3 shields).
 | [`bot.py`](bot.md) | Safety fixes: don't self-destruct | Superseded by bot2 |
 | [`bot2.py`](bot2.md) | Global target auction, hunting, expansion | **Recommended submission** |
 | [`bot3.py`](bot3.md) | bot2 with sweep-tuned constants | Retired — validated worse than bot2 |
-| [`bot4.py`](bot4.md) | Influence fields, rate mining, farming | Work in progress |
+| [`bot4.py`](bot4.md) | Influence fields, rate mining, farming | Experiment concluded — reduced to bot2 + extras |
+| [`bot5.py`](bot5.md) | Graded repulsion (grown from Gavin's gradient) | Retired — parity with bot2, no gain |
+| [`gavin.py`](evaluation.md) | Gavin's heat-seeking gradient bot (from main) | Field sample; idea source for bot5 |
 
 ## How bots are evaluated
 
