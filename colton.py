@@ -5,17 +5,17 @@ Architectural differences from bot.py:
   * Global task assignment: every (ship, target) pair is scored into one
     matrix -- mining cells, hunting laden enemy ships -- and assignments are
     taken best-first across the whole fleet, so early ships no longer steal
-    the good cells from later ones.
+    the good cells from later ones[cite: 3].
   * Aggressive spawn economics: a ship is an investment that pays back over
     the remaining turns, so the fleet cap is high early and shrinks as the
-    payback window closes.
+    payback window closes[cite: 3].
   * Hunting packs: empty ships are allowed to chase laden enemy ships
     (lighter ship wins the collision and steals half the cargo); up to two
-    hunters per prey so retreats get cut off.
+    hunters per prey so retreats get cut off[cite: 3].
   * Expansion: a second and third shipyard once the fleet outgrows one,
-    placed under a ship that is already far from home in a rich area.
+    placed under a ship that is already far from home in a rich area[cite: 3].
   * Same safety core that fixed the old bots: reserved next-turn cells,
-    no spawning onto occupied yards, threat-aware movement, endgame recall.
+    no spawning onto occupied yards, threat-aware movement, endgame recall[cite: 3].
 
 Run locally:
     uv run --script run-viewer.py colton.py bot.py random random
@@ -30,34 +30,34 @@ from kaggle_environments.envs.halite.helpers import (
 
 # --- Tunable strategy parameters (Optimized for 5000 Starting Halite) --------
 SPAWN_STOP_STEPS_LEFT = 60     # Ships pay back faster on rich regenerating maps
-FLEET_CAP_EARLY = 40           # Aggressive expansion with 5k starting bank
-FLEET_CAP_MID = 25             # Scale down mid-game as map density drops
-CARGO_RETURN_THRESHOLD = 600   # Higher cargo threshold to maximize trip efficiency
+FLEET_CAP_EARLY = 25           # Controlled early fleet size to prevent overcrowding
+FLEET_CAP_MID = 18             # Scale down mid-game as map density drops
+CARGO_RETURN_THRESHOLD = 500   # Solid return threshold to maximize trip efficiency
 LATE_RETURN_THRESHOLD = 150    # Low bar near end-game to guarantee deposit
-TOPUP_DIST = 2                 # Opportunistic deposit distance
-TOPUP_CARGO = 300              # Opportunistic deposit cargo amount
+TOPUP_DIST = 2                 # Opportunistic deposit distance[cite: 3]
+TOPUP_CARGO = 300              # Opportunistic deposit cargo amount[cite: 3]
 
-TARGET_MIN_HALITE = 25         # Avoid stripping regenerating tiles down to 0
-HOME_DIST_WEIGHT = 0.35        # Discount distant cells slightly less early on
+HOME_DIST_WEIGHT = 0.35        # Discount distant cells slightly less early on[cite: 3]
+CLUSTER_WEIGHT = 0.10          # Weight applied to surrounding cluster density
 
-HUNT_MIN_PREY_CARGO = 50       # Aggressive hunting (smallest ship steals cargo)
-HUNT_WEIGHT = 1.0              # Equal priority to hunting laden enemies vs mining
-HUNTERS_PER_PREY = 2           # Pack size to cut off retreats
+HUNT_MIN_PREY_CARGO = 250      # Only hunt enemies loaded with fat cargo
+HUNT_WEIGHT = 0.35             # Balanced priority between hunting vs mining
+HUNTERS_PER_PREY = 2           # Pack size to cut off retreats[cite: 3]
 
-DOCK_SEARCH_RADIUS = 5         # Search radius for initial shipyard placement
-DOCK_EVAL_RADIUS = 4           # Neighborhood evaluation radius
-DOCK_DIST_PENALTY = 100        # Walking cost penalty
-CONVERT_DEADLINE = 5           # Convert faster on step 1 with plentiful funds
+DOCK_SEARCH_RADIUS = 5         # Search radius for initial shipyard placement[cite: 3]
+DOCK_EVAL_RADIUS = 4           # Neighborhood evaluation radius[cite: 3]
+DOCK_DIST_PENALTY = 100        # Walking cost penalty[cite: 3]
+CONVERT_DEADLINE = 5           # Convert faster on step 1 with plentiful funds[cite: 3]
 
-EXPAND_FLEET = 12              # Build 2nd/3rd shipyard every 12 ships
-EXPAND_MIN_DIST = 7            # Keep shipyards spread across the map
-EXPAND_STOP_STEPS_LEFT = 100   # Stop building yards late in the game
+EXPAND_FLEET = 10              # Build 2nd shipyard at 10 ships, 3rd at 20
+EXPAND_MIN_DIST = 8            # Keep shipyards spread across the map
+EXPAND_STOP_STEPS_LEFT = 110   # Stop building yards late in the game
 MAX_YARDS = 3                  # Cap total shipyards
 
-ENDGAME_MARGIN = 3             # Extra turn buffer when recalling ships at step 400
-DANGER_PENALTY = 1000          # Penalty for entering a kill zone
+ENDGAME_MARGIN = 4             # Extra turn buffer when recalling ships at step 400
+DANGER_PENALTY = 1000          # Penalty for entering a kill zone[cite: 3]
 
-_dock_target = None  # persists across turns within one episode
+_dock_target = None  # persists across turns within one episode[cite: 3]
 
 ALL_DIRECTIONS = [ShipAction.NORTH, ShipAction.EAST, ShipAction.SOUTH, ShipAction.WEST]
 
@@ -90,6 +90,42 @@ def find_dock_site(position, board, size):
     return best_pos
 
 
+def get_min_halite_threshold(steps_left):
+    """Dynamically scales mining floor to protect 2% turn compounding early."""
+    if steps_left > 250:
+        return 60  # Leave buffer to preserve map regeneration rate
+    elif steps_left > 100:
+        return 25  # Standard mid-game threshold
+    else:
+        return 0   # Strip everything clean before end of match
+
+
+def get_neighborhood_value(board, center_pos, radius=2):
+    """Calculates surrounding density so ships favor rich clusters over isolated tiles."""
+    total = 0
+    size = board.configuration.size
+    for dy in range(-radius, radius + 1):
+        for dx in range(-radius, radius + 1):
+            pos = Point((center_pos.x + dx) % size, (center_pos.y + dy) % size)
+            total += board.cells[pos].halite
+    return total
+
+
+def classify_collision(friendly_cargo, enemy_cargo):
+    """
+    Returns collision outcome from friendly ship perspective:
+    1: Win (Friendly survives, steals 50% cargo)
+    0: Mutual Destruction (Both die)
+    -1: Loss (Friendly destroyed)
+    """
+    if friendly_cargo < enemy_cargo:
+        return 1
+    elif friendly_cargo == enemy_cargo:
+        return 0
+    else:
+        return -1
+
+
 def agent(obs, config):
     global _dock_target
 
@@ -106,46 +142,49 @@ def agent(obs, config):
     enemy_yards = {sy.position for p in board.opponents for sy in p.shipyards}
 
     def dangerous(pos, cargo):
-        return any(
-            ec <= cargo and toroidal_distance(ep, pos, size) <= 1
-            for ep, ec in enemy_ships
-        )
+        """Checks if stepping into pos risks losing a collision against an enemy."""
+        cell = board.cells[pos]
+        if cell.ship is not None and cell.ship.player_id != me.id:
+            if classify_collision(cargo, cell.ship.halite) <= 0:
+                return True
+        for neighbor in [cell.north, cell.south, cell.east, cell.west]:
+            if neighbor.ship is not None and neighbor.ship.player_id != me.id:
+                if classify_collision(cargo, neighbor.ship.halite) <= 0:
+                    return True
+        return False
+
+    converting = set()
+    targets = {}  # ship.id -> Point to head for[cite: 3]
 
     # ---- Shipyard creation --------------------------------------------------
-    converting = set()
-
     if not me.shipyards and me.ships:
-        # No yard at all: rebuild under the richest ship (its cargo offsets
-        # the cost and deposits instantly), walking to a dock site at game
-        # start when there is time to be picky.
-        pioneer = max(me.ships, key=lambda s: s.halite)
+        starter = max(me.ships, key=lambda s: s.halite)
         if _dock_target is None:
-            _dock_target = find_dock_site(pioneer.position, board, size)
-        arrived = pioneer.position == _dock_target
+            _dock_target = find_dock_site(starter.position, board, size)
+
+        arrived = starter.position == _dock_target
         overdue = board.step >= CONVERT_DEADLINE
-        if (arrived or overdue) and halite_left + pioneer.halite >= convert_cost:
-            pioneer.next_action = ShipAction.CONVERT
-            converting.add(pioneer.id)
-            halite_left -= max(0, convert_cost - pioneer.halite)
+
+        if (arrived or overdue) and halite_left + starter.halite >= convert_cost:
+            starter.next_action = ShipAction.CONVERT
+            converting.add(starter.id)
+            halite_left -= max(0, convert_cost - starter.halite)
             _dock_target = None
+        else:
+            targets[starter.id] = _dock_target
+
     elif (
         len(me.shipyards) < MAX_YARDS
         and len(me.ships) >= EXPAND_FLEET * len(me.shipyards)
         and steps_left > EXPAND_STOP_STEPS_LEFT
         and halite_left >= convert_cost + spawn_cost
     ):
-        # Expansion: convert a ship that is already far from every yard and
-        # sitting in the richest neighborhood among the candidates.
         yard_pos = [sy.position for sy in me.shipyards]
         best_ship, best_score = None, None
         for ship in me.ships:
             if min(toroidal_distance(ship.position, y, size) for y in yard_pos) < EXPAND_MIN_DIST:
                 continue
-            neighborhood = sum(
-                board.cells[p].halite
-                for p, d in cells_within(ship.position, 3, size)
-                if d > 0
-            )
+            neighborhood = get_neighborhood_value(board, ship.position, radius=3)
             if best_score is None or neighborhood > best_score:
                 best_ship, best_score = ship, neighborhood
         if best_ship is not None:
@@ -163,16 +202,13 @@ def agent(obs, config):
         )
 
     # ---- Task assignment ----------------------------------------------------
-    # Ships that must bank cargo are forced home; everyone else enters a
-    # global (ship, target) auction over mining cells and hunting targets.
     return_threshold = (
         CARGO_RETURN_THRESHOLD if steps_left > 100 else LATE_RETURN_THRESHOLD
     )
-    targets = {}       # ship.id -> Point to head for
     free_ships = []
 
     for ship in me.ships:
-        if ship.id in converting:
+        if ship.id in converting or ship.id in targets:
             continue
         home = nearest_yard(ship.position)
         dist_home = (
@@ -188,30 +224,37 @@ def agent(obs, config):
         else:
             free_ships.append(ship)
 
-    # Candidate targets: worthwhile cells anywhere on the board, plus laden
-    # enemy ships for empty hunters.
+    # Dynamic mining threshold & Candidate target generation
+    min_halite_floor = get_min_halite_threshold(steps_left)
     mine_cells = [
         (pos, cell.halite)
         for pos, cell in board.cells.items()
-        if cell.halite >= TARGET_MIN_HALITE and pos not in enemy_yards
+        if cell.halite >= min_halite_floor and pos not in enemy_yards
     ]
     prey = [(ep, ec) for ep, ec in enemy_ships if ec >= HUNT_MIN_PREY_CARGO]
 
     bids = []
     for ship in free_ships:
         pos, cargo = ship.position, ship.halite
+
+        # Score mining cells (incorporating cluster density)
         for cell_pos, halite in mine_cells:
             if dangerous(cell_pos, cargo):
                 continue
             d = toroidal_distance(pos, cell_pos, size)
             home = nearest_yard(cell_pos)
             d_home = toroidal_distance(cell_pos, home, size) if home else 0
-            score = halite / (1 + d + HOME_DIST_WEIGHT * d_home)
+            cluster_density = get_neighborhood_value(board, cell_pos, radius=4)
+            effective_halite = halite + (CLUSTER_WEIGHT * cluster_density)
+            score = effective_halite / (1 + d + HOME_DIST_WEIGHT * d_home)
             bids.append((score, ship.id, ("mine", cell_pos)))
+
+        # Score hunting targets (0-cargo ships targeting laden enemies)
         if cargo == 0:
             for prey_pos, prey_cargo in prey:
                 d = toroidal_distance(pos, prey_pos, size)
-                score = HUNT_WEIGHT * prey_cargo / (1 + d)
+                stolen_halite = prey_cargo * 0.50
+                score = (HUNT_WEIGHT * stolen_halite) / (1 + d)
                 bids.append((score, ship.id, ("hunt", prey_pos)))
 
     bids.sort(key=lambda b: -b[0])
@@ -230,6 +273,20 @@ def agent(obs, config):
             hunter_counts[tpos] = hunter_counts.get(tpos, 0) + 1
         targets[ship_id] = tpos
 
+    # FALLBACK: Ensure every free ship gets assigned a target instead of idling
+    all_positive_halite_cells = [pos for pos, cell in board.cells.items() if cell.halite > 0]
+    for ship in free_ships:
+        if ship.id not in targets:
+            if all_positive_halite_cells:
+                best_fallback = min(
+                    all_positive_halite_cells,
+                    key=lambda p: toroidal_distance(ship.position, p, size)
+                )
+                targets[ship.id] = best_fallback
+            else:
+                home = nearest_yard(ship.position)
+                targets[ship.id] = home if home else ship.position
+
     # ---- Movement resolution ------------------------------------------------
     reserved = set()
     for ship in sorted(me.ships, key=lambda s: -s.halite):
@@ -238,12 +295,12 @@ def agent(obs, config):
         pos, cargo = ship.position, ship.halite
         target = targets.get(ship.id, pos)
 
-        # An empty ship parked on its own yard blocks spawning: step off.
-        if target == pos and pos in yard_positions and cargo == 0:
+        # Force idle ships parked on/near yard to step off and make room
+        if (pos in yard_positions or any(toroidal_distance(pos, y, size) <= 1 for y in yard_positions)) and target == pos:
             best_adj, best_h = None, -1
             for action in ALL_DIRECTIONS:
                 nxt = pos.translate(action.to_point(), size)
-                if nxt in reserved or nxt in enemy_yards or dangerous(nxt, cargo):
+                if nxt in reserved or nxt in enemy_yards:
                     continue
                 if board.cells[nxt].halite > best_h:
                     best_adj, best_h = nxt, board.cells[nxt].halite
@@ -261,9 +318,9 @@ def agent(obs, config):
             if best_score is None or score > best_score:
                 best_action, best_score, chosen = action, score, nxt
         if chosen is None:
-            chosen = pos  # boxed in by our own fleet: hold
+            chosen = pos  # boxed in by our own fleet: hold[cite: 3]
 
-        # Cornered with a fat cargo: convert, banking it before collision.
+        # Cornered with fat cargo: convert, banking it before collision[cite: 3].
         boxed_in = best_score is not None and best_score <= -DANGER_PENALTY
         if (
             boxed_in
@@ -296,7 +353,7 @@ def agent(obs, config):
         if halite_left < spawn_cost or shipyard.position in reserved:
             continue
         under_cap = fleet_size < fleet_cap and steps_left > SPAWN_STOP_STEPS_LEFT
-        # A spawned ship also bodyguards the yard against adjacent raiders.
+        # A spawned ship bodyguards the yard against adjacent raiders[cite: 3].
         if under_cap or shipyard.position in threat_near_yard:
             shipyard.next_action = ShipyardAction.SPAWN
             reserved.add(shipyard.position)
