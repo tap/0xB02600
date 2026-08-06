@@ -64,10 +64,12 @@ economics.
   hunting — neither showed measurable value at this match budget.
 - **Kept**: endgame convert (theoretically free EV: banks
   `cargo − 500` that would otherwise evaporate) and a small kill bonus.
-- **Meta-lesson**: at this noise level (see the control series in
-  docs/README.md), 8-game series can only detect large effects.
-  Distinguishing "bot2 + ε" from bot2 would need 30+ paired games —
-  not the best use of a hackathon evening.
+- **Meta-lesson**: the control series (two literal bot2 copies: 1/8,
+  −744 mean) proved 8-game series only detect large effects. v3/v4's
+  deficits are within ~2× the noise floor — real parity is plausible,
+  superiority is not in evidence. Distinguishing "bot2 + ε" from bot2
+  would need 30+ paired games — not the best use of a hackathon
+  evening.
 
 ## Open questions (for a future revisit)
 

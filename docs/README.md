@@ -18,10 +18,14 @@ All results come from full 400-turn games using the vendored
 `kaggle-environments` engine from the hackathon zip, run headlessly
 (`scratchpad/run_match.py`, `battle.py`, `battle2.py`, `tune.py`).
 
-- **Series, not single games.** Match noise is large: in
-  baseline-vs-baseline control games the same bot's score swung by
-  ±1300+ halite and seat "wins" split 1/6. Nothing under ~8 paired
-  games is treated as signal.
+- **Series, not single games.** Match noise is large. Two measured
+  controls: in the tuning sweep, baseline-vs-baseline games swung
+  ±1300+ halite with seat "wins" splitting 1/6; a dedicated 8-game
+  series between two *literal copies of bot2* finished 1/8 with a
+  −744 mean delta. Mirror games are bimodal — an early successful
+  robbery snowballs. Consequently an 8-game series can only detect
+  large effects (bot2 vs bot.py was 4/4 at ~10× margins); anything
+  within ±1,000 mean delta is treated as parity.
 - **Paired comparison.** Competing bots play in the *same* games
   (with `bot.py` and `random` filling the other seats), seats rotated
   across matches, so map luck largely cancels.
