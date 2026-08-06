@@ -1,39 +1,24 @@
-"""Halite tournament bot, fourth generation (experiment record).
+"""Halite tournament bot, second generation.
 
-Started as a different architecture from bot2's greedy auction, borrowing
-from the published Halite IV playbook (0Zeta's 4th-place writeup,
-solverworld's optimal-mining notebook). Head-to-head series against bot2
-rejected most of the new ideas, so the shipped configuration is bot2's
-economics plus the two survivors -- see docs/bot4.md for the full
-experiment log.
+Architectural differences from bot.py:
 
-Active differences from bot2:
-
-  * Endgame convert: a ship carrying well over the convert cost that can't
-    reach home in the turns remaining converts in place, banking cargo
-    minus 500 that would otherwise evaporate at turn 400.
-  * Kill moves: stepping onto a heavier enemy ship scores a small movement
-    bonus (we win the collision and take half its cargo).
-
-Present but DISABLED by default after measuring negative or neutral value
-against bot2 (constants gate them):
-
-  * Control field (CONTROL_*_WEIGHT = 0): blurred influence map biasing
-    mining and movement toward dominated territory.
-  * Farming (FARM_START_STEP = 99999): leave cells near our yards to
-    regenerate toward the 500 cap, harvest late. Lost hard vs a hunting
-    opponent: it pushes miners on long trips through pirate territory.
-  * Rate-based mining (SIT_LENGTHS unused): halite-per-turn trip scoring
-    over-favored distant rich cells; bot2's distance-discounted halite
-    keeps trips short and exposure low.
-  * Interception hunting (reverted to chase-the-cell): aiming at the
-    prey's escape square did not measurably beat naive chasing.
-
-Safety core retained from bot2: reserved next-turn cells, no spawning onto
-occupied yards, hard collision danger checks, endgame recall.
+  * Global task assignment: every (ship, target) pair is scored into one
+    matrix -- mining cells, hunting laden enemy ships -- and assignments are
+    taken best-first across the whole fleet, so early ships no longer steal
+    the good cells from later ones.
+  * Aggressive spawn economics: a ship is an investment that pays back over
+    the remaining turns, so the fleet cap is high early and shrinks as the
+    payback window closes.
+  * Hunting packs: empty ships are allowed to chase laden enemy ships
+    (lighter ship wins the collision and steals half the cargo); up to two
+    hunters per prey so retreats get cut off.
+  * Expansion: a second and third shipyard once the fleet outgrows one,
+    placed under a ship that is already far from home in a rich area.
+  * Same safety core that fixed the old bots: reserved next-turn cells,
+    no spawning onto occupied yards, threat-aware movement, endgame recall.
 
 Run locally:
-    uv run --script run-viewer.py bot4.py bot2.py random random
+    uv run --script run-viewer.py bot2.py bot.py random random
 """
 
 from kaggle_environments.envs.halite.helpers import (
@@ -52,26 +37,15 @@ LATE_RETURN_THRESHOLD = 200    # lower bar once steps_left < 100
 TOPUP_DIST = 2                 # deposit opportunistically when this close
 TOPUP_CARGO = 300              # ...and carrying at least this much
 TARGET_MIN_HALITE = 20         # cells below this aren't mining targets
-RETURN_LEG_WEIGHT = 0.4        # weight of the deposit leg in trip length
-SIT_LENGTHS = (1, 2, 3, 4, 6, 8)   # candidate turns to sit mining a cell
-CONTROL_RADIUS = 4             # influence blur radius
-CONTROL_MINE_WEIGHT = 0.0     # how strongly control scales mining scores
-CONTROL_MOVE_WEIGHT = 0.0      # how strongly control scores movement
-FARM_RADIUS = 2                # plantation ring around our yards
-FARM_HARVEST_HALITE = 470      # mine plantation cells this full (cap is 500)
-FARM_STOP_STEPS_LEFT = 70      # strip the plantations near game end
-FARM_START_STEP = 99999           # no farming before the economy is running
-HUNT_MIN_PREY_CARGO = 100      # only chase enemies worth robbing
-HUNT_WEIGHT = 0.7             # hunting score multiplier vs mining rates
+HOME_DIST_WEIGHT = 0.4         # how much return distance discounts a cell
+HUNT_MIN_PREY_CARGO = 50      # only chase enemies worth robbing
+HUNT_WEIGHT = 1.5              # hunting score multiplier vs mining
 HUNTERS_PER_PREY = 2           # pack size allowed on one target
-HUNTER_FLEET_FRACTION = 1      # at most fleet/this many ships hunting
-KILL_BONUS_CAP = 3            # movement bonus cap for stepping onto prey
-ENDGAME_CONVERT_CARGO = 650    # bank-by-converting threshold (cost is 500)
 DOCK_SEARCH_RADIUS = 4         # first-yard site search distance
 DOCK_EVAL_RADIUS = 4           # neighborhood scored around dock candidates
 DOCK_DIST_PENALTY = 150        # halite-equivalent cost per step walked
 CONVERT_DEADLINE = 8           # convert in place if yard-less by this step
-EXPAND_FLEET = 10              # fleet size that justifies another yard
+EXPAND_FLEET = 10              # fleet size that justifies a second yard
 EXPAND_MIN_DIST = 6            # new yard must be this far from existing ones
 EXPAND_STOP_STEPS_LEFT = 120   # too late for a new yard to pay off
 MAX_YARDS = 3
@@ -81,7 +55,6 @@ DANGER_PENALTY = 1000          # movement penalty for entering a kill zone
 _dock_target = None  # persists across turns within one episode
 
 ALL_DIRECTIONS = [ShipAction.NORTH, ShipAction.EAST, ShipAction.SOUTH, ShipAction.WEST]
-MINE_FRACTION = [1 - 0.75 ** t for t in range(max(SIT_LENGTHS) + 1)]
 
 
 def toroidal_distance(a, b, size):
@@ -98,6 +71,7 @@ def cells_within(center, radius, size):
 
 
 def find_dock_site(position, board, size):
+    """Richest close-by neighborhood; walking costs halite-equivalent turns."""
     best_pos, best_score = position, None
     for pos, dist in cells_within(position, DOCK_SEARCH_RADIUS, size):
         neighborhood = sum(
@@ -123,36 +97,22 @@ def agent(obs, config):
 
     halite_left = me.halite
 
-    enemy_ships = [
-        (s.position, s.halite, s.player_id)
-        for p in board.opponents
-        for s in p.ships
-    ]
+    enemy_ships = [(s.position, s.halite) for p in board.opponents for s in p.ships]
     enemy_yards = {sy.position for p in board.opponents for sy in p.shipyards}
-    enemy_yards_by_player = {}
-    for p in board.opponents:
-        enemy_yards_by_player[p.id] = [sy.position for sy in p.shipyards]
-    enemy_ship_at = {ep: ec for ep, ec, _ in enemy_ships}
 
     def dangerous(pos, cargo):
         return any(
             ec <= cargo and toroidal_distance(ep, pos, size) <= 1
-            for ep, ec, _ in enemy_ships
+            for ep, ec in enemy_ships
         )
 
-    # Control field: friendly presence minus enemy presence, blurred so a
-    # ship 1 step away counts more than one 4 steps away.
-    control = {}
-    for ship in me.ships:
-        for pos, d in cells_within(ship.position, CONTROL_RADIUS, size):
-            control[pos] = control.get(pos, 0.0) + (CONTROL_RADIUS - d) / CONTROL_RADIUS
-    for ep, _, _ in enemy_ships:
-        for pos, d in cells_within(ep, CONTROL_RADIUS, size):
-            control[pos] = control.get(pos, 0.0) - (CONTROL_RADIUS - d) / CONTROL_RADIUS
-
-    # ---- Shipyard creation (same phased logic as bot2) ----------------------
+    # ---- Shipyard creation --------------------------------------------------
     converting = set()
+
     if not me.shipyards and me.ships:
+        # No yard at all: rebuild under the richest ship (its cargo offsets
+        # the cost and deposits instantly), walking to a dock site at game
+        # start when there is time to be picky.
         pioneer = max(me.ships, key=lambda s: s.halite)
         if _dock_target is None:
             _dock_target = find_dock_site(pioneer.position, board, size)
@@ -169,6 +129,8 @@ def agent(obs, config):
         and steps_left > EXPAND_STOP_STEPS_LEFT
         and halite_left >= convert_cost + spawn_cost
     ):
+        # Expansion: convert a ship that is already far from every yard and
+        # sitting in the richest neighborhood among the candidates.
         yard_pos = [sy.position for sy in me.shipyards]
         best_ship, best_score = None, None
         for ship in me.ships:
@@ -188,40 +150,29 @@ def agent(obs, config):
 
     yard_positions = [sy.position for sy in me.shipyards]
 
-    def nearest_yard_dist(pos):
-        if not yard_positions:
-            return None, 0
-        best = min(yard_positions, key=lambda p: toroidal_distance(pos, p, size))
-        return best, toroidal_distance(pos, best, size)
+    def nearest_yard(pos):
+        return min(
+            yard_positions,
+            key=lambda p: toroidal_distance(pos, p, size),
+            default=None,
+        )
 
-    # ---- Forced tasks: banking runs and endgame converts --------------------
+    # ---- Task assignment ----------------------------------------------------
+    # Ships that must bank cargo are forced home; everyone else enters a
+    # global (ship, target) auction over mining cells and hunting targets.
     return_threshold = (
         CARGO_RETURN_THRESHOLD if steps_left > 100 else LATE_RETURN_THRESHOLD
     )
-    targets = {}
+    targets = {}       # ship.id -> Point to head for
     free_ships = []
+
     for ship in me.ships:
         if ship.id in converting:
             continue
-        home, dist_home = nearest_yard_dist(ship.position)
-        # Cargo that can no longer be sailed home is banked by converting:
-        # conversion deposits instantly, netting cargo minus the 500 cost.
-        stranded = home is None or steps_left < dist_home
-        # Survival guard: converting our LAST ship with the bank under 500
-        # triggers the elimination rule (no ships + <500 halite) and zeroes
-        # the whole game -- caught twice in league play.
-        if (
-            ship.halite >= ENDGAME_CONVERT_CARGO
-            and (stranded or steps_left <= 2)
-            and board.cells[ship.position].shipyard is None
-            and (
-                len(me.ships) - len(converting) > 1
-                or halite_left + ship.halite - convert_cost >= 500
-            )
-        ):
-            ship.next_action = ShipAction.CONVERT
-            converting.add(ship.id)
-            continue
+        home = nearest_yard(ship.position)
+        dist_home = (
+            toroidal_distance(ship.position, home, size) if home is not None else 0
+        )
         must_bank = home is not None and ship.halite > 0 and (
             ship.halite >= return_threshold
             or (ship.halite >= TOPUP_CARGO and dist_home <= TOPUP_DIST)
@@ -232,74 +183,47 @@ def agent(obs, config):
         else:
             free_ships.append(ship)
 
-    # ---- Mining candidates (with plantations set aside) ---------------------
-    farming = (
-        steps_left > FARM_STOP_STEPS_LEFT and board.step > FARM_START_STEP
-    )
-    mine_cells = []
-    for pos, cell in board.cells.items():
-        if cell.halite < TARGET_MIN_HALITE or pos in enemy_yards:
-            continue
-        _, d_home = nearest_yard_dist(pos)
-        if (
-            farming
-            and yard_positions
-            and d_home <= FARM_RADIUS
-            and cell.halite < FARM_HARVEST_HALITE
-        ):
-            continue  # plantation: let it regenerate toward the cap
-        mine_cells.append((pos, cell.halite, d_home))
-
-    # ---- Global target auction ---------------------------------------------
-    prey = []
-    for ep, ec, epid in enemy_ships:
-        if ec < HUNT_MIN_PREY_CARGO:
-            continue
-        # Aim at the escape square: the prey's neighbor closest to its own
-        # nearest yard. Cornering its retreat beats tailing it.
-        intercept = ep  # hunt like bot2: chase the prey's cell
-        prey.append((ep, ec, intercept))
+    # Candidate targets: worthwhile cells anywhere on the board, plus laden
+    # enemy ships for empty hunters.
+    mine_cells = [
+        (pos, cell.halite)
+        for pos, cell in board.cells.items()
+        if cell.halite >= TARGET_MIN_HALITE and pos not in enemy_yards
+    ]
+    prey = [(ep, ec) for ep, ec in enemy_ships if ec >= HUNT_MIN_PREY_CARGO]
 
     bids = []
     for ship in free_ships:
         pos, cargo = ship.position, ship.halite
-        for cell_pos, halite, d_home in mine_cells:
+        for cell_pos, halite in mine_cells:
             if dangerous(cell_pos, cargo):
                 continue
-            d1 = toroidal_distance(pos, cell_pos, size)
-            score = halite / (1 + d1 + RETURN_LEG_WEIGHT * d_home)
+            d = toroidal_distance(pos, cell_pos, size)
+            home = nearest_yard(cell_pos)
+            d_home = toroidal_distance(cell_pos, home, size) if home else 0
+            score = halite / (1 + d + HOME_DIST_WEIGHT * d_home)
             bids.append((score, ship.id, ("mine", cell_pos)))
         if cargo == 0:
-            for ep, ec, intercept in prey:
-                d = toroidal_distance(pos, intercept, size)
-                bids.append(
-                    (HUNT_WEIGHT * ec / (1 + d), ship.id, ("hunt", ep, intercept))
-                )
+            for prey_pos, prey_cargo in prey:
+                d = toroidal_distance(pos, prey_pos, size)
+                score = HUNT_WEIGHT * prey_cargo / (1 + d)
+                bids.append((score, ship.id, ("hunt", prey_pos)))
 
     bids.sort(key=lambda b: -b[0])
     taken_cells = set()
     hunter_counts = {}
-    max_hunters = max(1, len(me.ships) // HUNTER_FLEET_FRACTION)
-    total_hunters = 0
-    for score, ship_id, task in bids:
+    for score, ship_id, (kind, tpos) in bids:
         if ship_id in targets:
             continue
-        if task[0] == "mine":
-            if task[1] in taken_cells:
+        if kind == "mine":
+            if tpos in taken_cells:
                 continue
-            taken_cells.add(task[1])
-            targets[ship_id] = task[1]
+            taken_cells.add(tpos)
         else:
-            _, prey_pos, intercept = task
-            if total_hunters >= max_hunters:
+            if hunter_counts.get(tpos, 0) >= HUNTERS_PER_PREY:
                 continue
-            n = hunter_counts.get(prey_pos, 0)
-            if n >= HUNTERS_PER_PREY:
-                continue
-            hunter_counts[prey_pos] = n + 1
-            total_hunters += 1
-            # First hunter takes the escape square, the second tails the prey.
-            targets[ship_id] = intercept if n == 0 else prey_pos
+            hunter_counts[tpos] = hunter_counts.get(tpos, 0) + 1
+        targets[ship_id] = tpos
 
     # ---- Movement resolution ------------------------------------------------
     reserved = set()
@@ -309,6 +233,7 @@ def agent(obs, config):
         pos, cargo = ship.position, ship.halite
         target = targets.get(ship.id, pos)
 
+        # An empty ship parked on its own yard blocks spawning: step off.
         if target == pos and pos in yard_positions and cargo == 0:
             best_adj, best_h = None, -1
             for action in ALL_DIRECTIONS:
@@ -326,20 +251,15 @@ def agent(obs, config):
             if nxt in enemy_yards or nxt in reserved:
                 continue
             score = -toroidal_distance(nxt, target, size)
-            score += CONTROL_MOVE_WEIGHT * max(
-                -2.0, min(2.0, control.get(nxt, 0.0))
-            )
-            victim = enemy_ship_at.get(nxt)
-            if victim is not None and victim > cargo:
-                score += min(victim / 50, KILL_BONUS_CAP)
             if dangerous(nxt, cargo):
                 score -= DANGER_PENALTY
             if best_score is None or score > best_score:
                 best_action, best_score, chosen = action, score, nxt
         if chosen is None:
-            chosen = pos
+            chosen = pos  # boxed in by our own fleet: hold
 
-        boxed_in = best_score is not None and best_score <= -DANGER_PENALTY + KILL_BONUS_CAP
+        # Cornered with a fat cargo: convert, banking it before collision.
+        boxed_in = best_score is not None and best_score <= -DANGER_PENALTY
         if (
             boxed_in
             and cargo >= convert_cost + 100
@@ -365,14 +285,13 @@ def agent(obs, config):
     threat_near_yard = {
         sy.position
         for sy in me.shipyards
-        if any(
-            toroidal_distance(ep, sy.position, size) <= 2 for ep, _, _ in enemy_ships
-        )
+        if any(toroidal_distance(ep, sy.position, size) <= 2 for ep, _ in enemy_ships)
     }
     for shipyard in me.shipyards:
         if halite_left < spawn_cost or shipyard.position in reserved:
             continue
         under_cap = fleet_size < fleet_cap and steps_left > SPAWN_STOP_STEPS_LEFT
+        # A spawned ship also bodyguards the yard against adjacent raiders.
         if under_cap or shipyard.position in threat_near_yard:
             shipyard.next_action = ShipyardAction.SPAWN
             reserved.add(shipyard.position)
