@@ -12,6 +12,7 @@ shipyards 3 shields).
 | [`bot3.py`](bot3.md) | bot2 with sweep-tuned constants | Retired — validated worse than bot2 |
 | [`bot4.py`](bot4.md) | Influence fields, rate mining, farming | Experiment concluded — reduced to bot2 + extras |
 | [`bot5.py`](bot5.md) | Graded repulsion (grown from Gavin's gradient) | Retired — parity with bot2, no gain |
+| [`bot6.py`](bot6.md) | Gavin's gradient bot with review fixes | Under evaluation — 9× over gavin-v2 |
 | [`gavin.py`](evaluation.md) | Gavin's heat-seeking gradient bot (from main) | Field sample; idea source for bot5 |
 
 See also [engine-notes.md](engine-notes.md) — exploit audit and defensive hardening.
