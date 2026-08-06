@@ -1,27 +1,33 @@
-"""Halite tournament bot, fourth generation.
+"""Halite tournament bot, fourth generation (experiment record).
 
-A different architecture from bot2's greedy auction, borrowing from the
-published Halite IV playbook (0Zeta's 4th-place writeup, solverworld's
-optimal-mining notebook):
+Started as a different architecture from bot2's greedy auction, borrowing
+from the published Halite IV playbook (0Zeta's 4th-place writeup,
+solverworld's optimal-mining notebook). Head-to-head series against bot2
+rejected most of the new ideas, so the shipped configuration is bot2's
+economics plus the two survivors -- see docs/bot4.md for the full
+experiment log.
 
-  * Control field: a blurred influence map (friendly minus enemy ship
-    presence) biases mining toward cells we dominate and lets ships work
-    the contested frontier instead of treating any enemy-adjacent cell as
-    forbidden.
-  * Rate-based mining scores: cells are valued by halite-per-turn over the
-    full travel + sit-and-mine + return-home round trip (best sit length
-    chosen per cell), not by distance-discounted halite.
-  * Farming: cells around our shipyards are left to regenerate (2%/turn
-    compounds toward the 500 cap) and only harvested near game end or when
-    nearly full -- this fork's 3-shield yards make plantations defensible.
-  * Interception hunting: hunters aim at the prey's escape square (toward
-    its own nearest yard) rather than chasing its current cell; up to two
-    hunters per prey, capped at a quarter of the fleet.
-  * Kill moves: stepping onto a heavier enemy ship scores a bonus (we win
-    the collision and take half its cargo).
+Active differences from bot2:
+
   * Endgame convert: a ship carrying well over the convert cost that can't
     reach home in the turns remaining converts in place, banking cargo
     minus 500 that would otherwise evaporate at turn 400.
+  * Kill moves: stepping onto a heavier enemy ship scores a small movement
+    bonus (we win the collision and take half its cargo).
+
+Present but DISABLED by default after measuring negative or neutral value
+against bot2 (constants gate them):
+
+  * Control field (CONTROL_*_WEIGHT = 0): blurred influence map biasing
+    mining and movement toward dominated territory.
+  * Farming (FARM_START_STEP = 99999): leave cells near our yards to
+    regenerate toward the 500 cap, harvest late. Lost hard vs a hunting
+    opponent: it pushes miners on long trips through pirate territory.
+  * Rate-based mining (SIT_LENGTHS unused): halite-per-turn trip scoring
+    over-favored distant rich cells; bot2's distance-discounted halite
+    keeps trips short and exposure low.
+  * Interception hunting (reverted to chase-the-cell): aiming at the
+    prey's escape square did not measurably beat naive chasing.
 
 Safety core retained from bot2: reserved next-turn cells, no spawning onto
 occupied yards, hard collision danger checks, endgame recall.
@@ -46,20 +52,20 @@ LATE_RETURN_THRESHOLD = 200    # lower bar once steps_left < 100
 TOPUP_DIST = 2                 # deposit opportunistically when this close
 TOPUP_CARGO = 300              # ...and carrying at least this much
 TARGET_MIN_HALITE = 20         # cells below this aren't mining targets
-RETURN_LEG_WEIGHT = 0.3        # weight of the deposit leg in trip length
+RETURN_LEG_WEIGHT = 0.4        # weight of the deposit leg in trip length
 SIT_LENGTHS = (1, 2, 3, 4, 6, 8)   # candidate turns to sit mining a cell
 CONTROL_RADIUS = 4             # influence blur radius
-CONTROL_MINE_WEIGHT = 0.25     # how strongly control scales mining scores
-CONTROL_MOVE_WEIGHT = 0.5      # how strongly control scores movement
+CONTROL_MINE_WEIGHT = 0.0     # how strongly control scales mining scores
+CONTROL_MOVE_WEIGHT = 0.0      # how strongly control scores movement
 FARM_RADIUS = 2                # plantation ring around our yards
 FARM_HARVEST_HALITE = 470      # mine plantation cells this full (cap is 500)
 FARM_STOP_STEPS_LEFT = 70      # strip the plantations near game end
-FARM_START_STEP = 40           # no farming before the economy is running
-HUNT_MIN_PREY_CARGO = 150      # only chase enemies worth robbing
-HUNT_WEIGHT = 0.45             # hunting score multiplier vs mining rates
+FARM_START_STEP = 99999           # no farming before the economy is running
+HUNT_MIN_PREY_CARGO = 100      # only chase enemies worth robbing
+HUNT_WEIGHT = 0.7             # hunting score multiplier vs mining rates
 HUNTERS_PER_PREY = 2           # pack size allowed on one target
-HUNTER_FLEET_FRACTION = 4      # at most fleet/this many ships hunting
-KILL_BONUS_CAP = 16            # movement bonus cap for stepping onto prey
+HUNTER_FLEET_FRACTION = 1      # at most fleet/this many ships hunting
+KILL_BONUS_CAP = 3            # movement bonus cap for stepping onto prey
 ENDGAME_CONVERT_CARGO = 650    # bank-by-converting threshold (cost is 500)
 DOCK_SEARCH_RADIUS = 4         # first-yard site search distance
 DOCK_EVAL_RADIUS = 4           # neighborhood scored around dock candidates
@@ -244,18 +250,7 @@ def agent(obs, config):
             continue
         # Aim at the escape square: the prey's neighbor closest to its own
         # nearest yard. Cornering its retreat beats tailing it.
-        their_yards = enemy_yards_by_player.get(epid) or []
-        intercept = ep
-        if their_yards:
-            their_home = min(
-                their_yards, key=lambda y: toroidal_distance(ep, y, size)
-            )
-            best_d = None
-            for action in ALL_DIRECTIONS:
-                nxt = ep.translate(action.to_point(), size)
-                d = toroidal_distance(nxt, their_home, size)
-                if best_d is None or d < best_d:
-                    intercept, best_d = nxt, d
+        intercept = ep  # hunt like bot2: chase the prey's cell
         prey.append((ep, ec, intercept))
 
     bids = []
@@ -265,15 +260,7 @@ def agent(obs, config):
             if dangerous(cell_pos, cargo):
                 continue
             d1 = toroidal_distance(pos, cell_pos, size)
-            best_rate = 0.0
-            for t in SIT_LENGTHS:
-                rate = (halite * MINE_FRACTION[t]) / (
-                    1 + d1 + t + RETURN_LEG_WEIGHT * d_home
-                )
-                if rate > best_rate:
-                    best_rate = rate
-            c = max(-2.0, min(2.0, control.get(cell_pos, 0.0)))
-            score = best_rate * (1 + CONTROL_MINE_WEIGHT * c / 2)
+            score = halite / (1 + d1 + RETURN_LEG_WEIGHT * d_home)
             bids.append((score, ship.id, ("mine", cell_pos)))
         if cargo == 0:
             for ep, ec, intercept in prey:

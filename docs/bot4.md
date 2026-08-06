@@ -1,9 +1,11 @@
 # bot4.py — generation 4: influence fields, rate mining, farming
 
-**Status: work in progress — does not yet beat bot2.** Beats three
-randoms decisively (32,683; 25 ships; 3 yards) but loses head-to-head
-to bot2. Diagnosis and repair in flight; bot2 remains the recommended
-submission until bot4 wins a validation series.
+**Status: experiment concluded — architecture largely rejected.** Beats
+three randoms decisively (32,683; 25 ships; 3 yards) but every variant
+lost its head-to-head series against bot2. The shipped bot4.py is bot2's
+economics plus the two surviving extras (endgame convert, small kill
+bonus), with the rejected features left in the code but disabled by
+constants. **bot2 remains the recommended submission.**
 
 ## Design goals
 
@@ -42,19 +44,34 @@ Safety core (reservations, spawn discipline, recall, cornered-convert)
 carried over from bot2 unchanged, as are yard expansion and spawn
 economics.
 
-## What went wrong, so far
+## The experiment log (all series 8 games, rotated seats, vs bot2)
 
-| Experiment | Result vs bot2 | Conclusion |
+| Variant | Result | Conclusion |
 |---|---|---|
 | v0 as designed (smoke test) | 47 vs 8,367 | Catastrophic vs a hunter despite 32k vs randoms |
-| v0 with farming disabled (8 games) | 3/8, mean −1,182 | **Farming as implemented is net-negative**: locking the home patch pushes miners on long trips through hunter territory, exactly where bot2's pirates operate. Recovered most of the gap but not all. |
-| v1: no farm + kill bonus 16→3 + control steering off; v2: v1 + hunt 0.45→0.8 (8 games each) | *pending — series running* | The +16 kill bonus dwarfed the ±1 distance scale, making any miner adjacent to a heavier enemy abandon its route to chase it indefinitely. |
+| v0 + farming disabled | 3/8, mean −1,182 | **Farming as implemented is net-negative**: locking the home patch pushes miners on long trips through hunter territory, exactly where bot2's pirates operate. Recovered most of the gap. |
+| v1: no farm, kill bonus 16→3, control steering off | 0/8, −3,251 | The suspected fixes did not close the gap (and may be partly noise — see control below). The +16 kill bonus genuinely dwarfed the ±1 distance scale, but taming it alone didn't rescue the variant. |
+| v2: v1 + hunt weight 0.45→0.8 | 1/8, −1,417 | Matching bot2's hunting aggression isn't sufficient either. |
+| v3: v2 + **bot2's mining formula** (drop rate-based scoring, control multiplier) | 3/8, −1,252 | Rate-based mining was a major structural drag: it over-favors distant rich cells, lengthening exposed trips. With bot2 economics restored the deficit shrinks to ~noise scale. |
+| v4: v3 + bot2's hunting exactly (prey ≥100, no interception) = bot2 + convert trick + kill bonus 3 | 2/8, −1,878 | Even the "nearly bot2" reduction measured negative — motivating a bot2-vs-bot2 control series to establish the noise floor before reading any of these gaps as real. |
 
-## Open questions
+## Verdict
 
-- Does farming become viable with a smaller radius (1), a later start,
-  or only once local control is positive (guards actually holding the
-  plantation)?
-- Is the control field worth keeping in mining scores even if it's
-  removed from movement?
-- Interception hunting vs bot2's naive chase: not yet isolated.
+- **Rejected by evidence**: farming (as implemented), rate-based trip
+  scoring, oversized kill incentives. These are kept in the file but
+  gated off by constants, with the measurements documented here.
+- **Unproven, likely neutral**: control-field steering, interception
+  hunting — neither showed measurable value at this match budget.
+- **Kept**: endgame convert (theoretically free EV: banks
+  `cargo − 500` that would otherwise evaporate) and a small kill bonus.
+- **Meta-lesson**: at this noise level (see the control series in
+  docs/README.md), 8-game series can only detect large effects.
+  Distinguishing "bot2 + ε" from bot2 would need 30+ paired games —
+  not the best use of a hackathon evening.
+
+## Open questions (for a future revisit)
+
+- Does farming become viable with radius 1, a later start, or guards
+  actually holding the plantation?
+- Would interception hunting show value against a *fleeing-biased*
+  opponent rather than bot2's own hunters?
